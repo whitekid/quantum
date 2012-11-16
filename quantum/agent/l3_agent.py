@@ -26,6 +26,7 @@ import time
 import netaddr
 
 from quantum.agent.common import config
+from quantum.agent.linux import external_process
 from quantum.agent.linux import interface
 from quantum.agent.linux import ip_lib
 from quantum.agent.linux import iptables_manager
@@ -78,15 +79,24 @@ class L3NATAgent(object):
         cfg.IntOpt('polling_interval',
                    default=3,
                    help="The time in seconds between state poll requests."),
-        cfg.StrOpt('metadata_ip', default='',
-                   help="IP address used by Nova metadata server."),
+        cfg.StrOpt('metadata_ip', default='127.0.0.1',
+                   help="IP address used by Quantum metadata server."),
         cfg.IntOpt('metadata_port',
+<<<<<<< HEAD
                    default=8775,
                    help="TCP Port used by Nova metadata server."),
         #FIXME(danwent): not currently used
         cfg.BoolOpt('send_arp_for_ha',
                     default=True,
                     help="Send gratuitious ARP when router IP is configured"),
+=======
+                   default=9697,
+                   help="TCP Port used by Quantum metadata server."),
+        cfg.IntOpt('send_arp_for_ha',
+                   default=3,
+                   help="Send this many gratuitous ARPs for HA setup, "
+                        "set it below or equal to 0 to disable this feature."),
+>>>>>>> 5fd6a12... add metadata proxy support for Quantum Networks
         cfg.BoolOpt('use_namespaces', default=True,
                     help="Allow overlapping IP."),
         cfg.StrOpt('router_id', default='',
@@ -243,9 +253,11 @@ class L3NATAgent(object):
         for c, r in self.metadata_nat_rules():
             ri.iptables_manager.ipv4['nat'].add_rule(c, r)
         ri.iptables_manager.apply()
+        self._spawn_metadata_agent(ri)
 
     def _router_removed(self, router_id):
         ri = self.router_info[router_id]
+        self._destroy_metadata_agent(ri)
         for c, r in self.metadata_filter_rules():
             ri.iptables_manager.ipv4['filter'].remove_rule(c, r)
         for c, r in self.metadata_nat_rules():
@@ -253,6 +265,28 @@ class L3NATAgent(object):
         ri.iptables_manager.apply()
         del self.router_info[router_id]
         self._destroy_router_namespace(ri.ns_name())
+
+    def _spawn_metadata_agent(self, router_info):
+        def callback(pid_file):
+            return ['quantum-ns-metadata-proxy',
+                    '--pid_file=%s' % pid_file,
+                    '--router_id=%s' % router_info.router_id,
+                    '--state_path=%s' % self.conf.state_path]
+
+        pm = external_process.ProcessManager(
+            self.conf,
+            router_info.router_id,
+            self.conf.root_helper,
+            router_info.ns_name())
+        pm.enable(callback)
+
+    def _destroy_metadata_agent(self, router_info):
+        pm = external_process.ProcessManager(
+            self.conf,
+            router_info.router_id,
+            self.conf.root_helper,
+            router_info.ns_name())
+        pm.disable()
 
     def _set_subnet_info(self, port):
         ips = port['fixed_ips']
@@ -428,9 +462,8 @@ class L3NATAgent(object):
         rules = []
         if self.conf.metadata_ip:
             rules.append(('PREROUTING', '-s 0.0.0.0/0 -d 169.254.169.254/32 '
-                         '-p tcp -m tcp --dport 80 -j DNAT '
-                         '--to-destination %s:%s' %
-                         (self.conf.metadata_ip, self.conf.metadata_port)))
+                         '-p tcp -m tcp --dport 80 -j REDIRECT '
+                         '--to-port %s' % self.conf.metadata_port))
         return rules
 
     def external_gateway_nat_rules(self, ex_gw_ip, internal_cidrs,
@@ -525,6 +558,7 @@ def main():
     conf = config.setup_conf()
     conf.register_opts(L3NATAgent.OPTS)
     conf.register_opts(interface.OPTS)
+    conf.register_opts(external_process.OPTS)
     conf(sys.argv)
     config.setup_logging(conf)
 
