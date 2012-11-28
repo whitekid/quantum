@@ -82,21 +82,12 @@ class L3NATAgent(object):
         cfg.StrOpt('metadata_ip', default='127.0.0.1',
                    help="IP address used by Quantum metadata server."),
         cfg.IntOpt('metadata_port',
-<<<<<<< HEAD
-                   default=8775,
-                   help="TCP Port used by Nova metadata server."),
-        #FIXME(danwent): not currently used
-        cfg.BoolOpt('send_arp_for_ha',
-                    default=True,
-                    help="Send gratuitious ARP when router IP is configured"),
-=======
                    default=9697,
                    help="TCP Port used by Quantum metadata server."),
         cfg.IntOpt('send_arp_for_ha',
                    default=3,
                    help="Send this many gratuitous ARPs for HA setup, "
                         "set it below or equal to 0 to disable this feature."),
->>>>>>> 5fd6a12... add metadata proxy support for Quantum Networks
         cfg.BoolOpt('use_namespaces', default=True,
                     help="Allow overlapping IP."),
         cfg.StrOpt('router_id', default='',
